@@ -1,0 +1,39 @@
+# 서버 밖(GitHub)에서 공개 주소를 5분마다 확인한다. 주 서버가 통째로 죽으면 클러스터 안의 경보도 같이 멈추기 때문이다.
+# 실패하면 이 워크플로가 실패하고, GitHub 이 마지막으로 이 파일의 일정을 바꾼 사람에게 메일을 보낸다.
+# 공개 저장소다. 이미 공개된 주소만 적는다. 비밀값, 내부 주소(테일넷)는 넣지 않는다.
+name: uptime
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'     # GitHub 일정은 몇 분씩 늦게 돌 수 있다
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: check public endpoints
+        shell: bash
+        run: |
+          fail=0
+          check() {   # 이름 주소 기대코드
+            for i in 1 2 3; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$2" || echo 000)
+              [ "$code" = "$3" ] && { echo "OK   $1 $code"; echo "| $1 | $code | 정상 |" >> "$GITHUB_STEP_SUMMARY"; return; }
+              sleep 10
+            done
+            echo "FAIL $1 $code (기대 $3) $2"; echo "| $1 | $code | **실패** (기대 $3) |" >> "$GITHUB_STEP_SUMMARY"; fail=1
+          }
+          echo "| 대상 | 응답 | 결과 |" >> "$GITHUB_STEP_SUMMARY"; echo "| --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          check "직원 CRM"    https://console.awew24.com/login        200
+          check "고객 앱"     https://app.awew24.com/                 200
+          check "API"         https://api.awew24.com/actuator/health  200
+          check "회사 사이트" https://awew24.com/                     200
+          exit $fail
